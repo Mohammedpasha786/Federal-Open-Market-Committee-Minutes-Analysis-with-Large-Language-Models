@@ -1,0 +1,31 @@
+-- FOMC RAG — PostgreSQL schema
+-- Run once: psql -U postgres -f init_db.sql
+
+CREATE DATABASE fomc_rag;
+\c fomc_rag
+
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS fomc_chunks (
+    id          SERIAL PRIMARY KEY,
+    doc_date    TEXT        NOT NULL,
+    doc_url     TEXT        NOT NULL,
+    chunk_idx   INTEGER     NOT NULL,
+    content     TEXT        NOT NULL,
+    embedding   vector(384)           -- 384-dim for all-MiniLM; change to 1536 for OpenAI
+);
+
+-- IVFFlat index for approximate nearest-neighbour search
+CREATE INDEX IF NOT EXISTS fomc_vec_idx
+    ON fomc_chunks USING ivfflat (embedding vector_cosine_ops)
+    WITH (lists = 100);
+
+-- Metadata index
+CREATE INDEX IF NOT EXISTS fomc_date_idx ON fomc_chunks (doc_date);
+
+-- Helper view: one row per source document
+CREATE OR REPLACE VIEW fomc_documents AS
+    SELECT DISTINCT doc_date, doc_url,
+           COUNT(*) OVER (PARTITION BY doc_date) AS chunk_count
+    FROM fomc_chunks
+    ORDER BY doc_date DESC;

@@ -1,0 +1,55 @@
+function embeddings = embed_chunks(chunks, model_name)
+%EMBED_CHUNKS  Generate sentence embeddings using all-MiniLM-L6-v2.
+%
+%   embeddings = embed_chunks(chunks, model_name)
+%
+%   Requires the all-MiniLM MATLAB add-on, or falls back to the
+%   OpenAI text-embedding-3-small API when the add-on is unavailable.
+%
+%   Returns:  embeddings  [N x D double]  (N chunks, D embedding dim)
+
+    texts = {chunks.text}';
+    N     = numel(texts);
+
+    try
+        % --- local model (add-on) ---
+        mdl        = sentenceEmbeddingModel(model_name);
+        embeddings = encode(mdl, texts);
+        fprintf('    Using local model: %s\n', model_name);
+
+    catch
+        % --- OpenAI fallback ---
+        fprintf('    Local model unavailable — using OpenAI embedding API.\n');
+        api_key = getenv('OPENAI_API_KEY');
+        if isempty(api_key)
+            error('OPENAI_API_KEY not set and local model unavailable.');
+        end
+
+        BATCH  = 100;
+        DIM    = 1536;   % text-embedding-3-small
+        embeddings = zeros(N, DIM);
+
+        for b = 1:BATCH:N
+            idx   = b : min(b + BATCH - 1, N);
+            batch = texts(idx);
+
+            body = jsonencode(struct( ...
+                'model', 'text-embedding-3-small', ...
+                'input', {batch}));
+
+            resp = webwrite( ...
+                'https://api.openai.com/v1/embeddings', ...
+                body, ...
+                weboptions( ...
+                    'HeaderFields', {'Authorization', ['Bearer ', api_key]; ...
+                                     'Content-Type', 'application/json'}, ...
+                    'MediaType',    'application/json', ...
+                    'RequestMethod','post'));
+
+            for j = 1:numel(resp.data)
+                embeddings(idx(j), :) = resp.data(j).embedding;
+            end
+            pause(0.2);
+        end
+    end
+end

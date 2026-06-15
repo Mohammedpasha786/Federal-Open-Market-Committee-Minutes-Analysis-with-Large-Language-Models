@@ -1,0 +1,48 @@
+function docs = fetch_fomc_documents(base_url)
+%FETCH_FOMC_DOCUMENTS  Scrape FOMC calendar page and download meeting minutes.
+%
+%   docs = fetch_fomc_documents(base_url)
+%
+%   Returns a struct array with fields:
+%       .text   - plain text content
+%       .date   - meeting date string (YYYY-MM-DD)
+%       .url    - source URL
+
+    options = weboptions('Timeout', 30, 'ContentType', 'text');
+    html    = webread(base_url, options);
+
+    % Extract minutes URLs (pattern: /monetarypolicy/fomcminutes<date>.htm)
+    pattern  = 'href="(/monetarypolicy/fomcminutes\d{8}\.htm)"';
+    tokens   = regexp(html, pattern, 'tokens');
+    root_url = 'https://www.federalreserve.gov';
+
+    docs = struct('text', {}, 'date', {}, 'url', {});
+    for i = 1:numel(tokens)
+        url  = [root_url, tokens{i}{1}];
+        date = regexp(tokens{i}{1}, '\d{8}', 'match');
+        date = date{1};
+        date = [date(1:4), '-', date(5:6), '-', date(7:8)];
+
+        try
+            raw  = webread(url, options);
+            text = strip_html(raw);
+            docs(end+1) = struct('text', text, 'date', date, 'url', url); %#ok<AGROW>
+            fprintf('    [OK] %s\n', date);
+        catch ME
+            fprintf('    [SKIP] %s — %s\n', date, ME.message);
+        end
+        pause(0.5);   % polite delay
+    end
+end
+
+% -------------------------------------------------------------------------
+function text = strip_html(html)
+%STRIP_HTML  Remove HTML tags and normalise whitespace.
+    text = regexprep(html, '<[^>]+>', ' ');
+    text = regexprep(text, '&amp;',  '&');
+    text = regexprep(text, '&nbsp;', ' ');
+    text = regexprep(text, '&lt;',   '<');
+    text = regexprep(text, '&gt;',   '>');
+    text = regexprep(text, '\s+',    ' ');
+    text = strtrim(text);
+end

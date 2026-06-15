@@ -1,0 +1,48 @@
+function chunks = preprocess_and_chunk(docs, chunk_size, overlap)
+%PREPROCESS_AND_CHUNK  Clean text and split into overlapping token windows.
+%
+%   chunks = preprocess_and_chunk(docs, chunk_size, overlap)
+%
+%   Returns a struct array:
+%       .text   - chunk text
+%       .date   - source document date
+%       .url    - source document URL
+%       .idx    - chunk index within document
+
+    chunks = struct('text', {}, 'date', {}, 'url', {}, 'idx', {});
+
+    for d = 1:numel(docs)
+        text = docs(d).text;
+
+        % --- clean ---
+        text = lower(text);
+        text = regexprep(text, '[^a-z0-9\s\.\,\;\:\-\(\)]', ' ');
+        text = regexprep(text, '\s+', ' ');
+        text = strtrim(text);
+
+        % --- tokenise by word ---
+        words = strsplit(text);
+        n     = numel(words);
+
+        if n == 0, continue; end
+
+        step  = chunk_size - overlap;
+        c_idx = 0;
+        pos   = 1;
+
+        while pos <= n
+            c_idx = c_idx + 1;
+            tail  = min(pos + chunk_size - 1, n);
+            chunk_words = words(pos:tail);
+            chunk_text  = strjoin(chunk_words, ' ');
+
+            chunks(end+1) = struct( ...
+                'text', chunk_text, ...
+                'date', docs(d).date, ...
+                'url',  docs(d).url, ...
+                'idx',  c_idx);  %#ok<AGROW>
+
+            pos = pos + step;
+        end
+    end
+end

@@ -1,0 +1,56 @@
+function results = fomc_sentiment_analysis(docs, config)
+%FOMC_SENTIMENT_ANALYSIS  Score each FOMC document for hawkish/dovish tone.
+%
+%   results = fomc_sentiment_analysis(docs, config)
+%
+%   Returns a table with columns: date, score, label, summary
+%   score > 0  => hawkish (tightening bias)
+%   score < 0  => dovish  (easing bias)
+
+    HAWKISH_WORDS = {'inflation','tighten','hike','restrictive','above target', ...
+                     'overshoot','wage pressure','overheating'};
+    DOVISH_WORDS  = {'easing','accommodation','below target','unemployment', ...
+                     'slack','downside risk','supportive','cut','pause'};
+
+    dates  = {};
+    scores = [];
+    labels = {};
+    summs  = {};
+
+    for d = 1:numel(docs)
+        txt   = lower(docs(d).text);
+        h_cnt = sum(cellfun(@(w) numel(strfind(txt, w)), HAWKISH_WORDS));
+        d_cnt = sum(cellfun(@(w) numel(strfind(txt, w)), DOVISH_WORDS));
+        total = h_cnt + d_cnt;
+        score = (h_cnt - d_cnt) / max(total, 1);
+
+        if     score >  0.1, label = 'Hawkish';
+        elseif score < -0.1, label = 'Dovish';
+        else,                 label = 'Neutral';
+        end
+
+        % LLM one-sentence summary
+        prompt_sys = 'You are a central bank analyst. Summarise in one sentence.';
+        prompt_usr = ['Characterise the monetary policy tone of this excerpt:\n\n', ...
+                      docs(d).text(1:min(end,1500))];
+        summary = call_llm(prompt_sys, prompt_usr, config);
+
+        dates{end+1}  = docs(d).date;  %#ok<AGROW>
+        scores(end+1) = score;          %#ok<AGROW>
+        labels{end+1} = label;          %#ok<AGROW>
+        summs{end+1}  = summary;        %#ok<AGROW>
+    end
+
+    results = table(dates', scores', labels', summs', ...
+        'VariableNames', {'date','score','label','summary'});
+
+    %% Plot
+    figure('Name','FOMC Sentiment Over Time','Color','w');
+    bar(scores, 'FaceColor','flat');
+    xticklabels(dates);
+    xtickangle(45);
+    ylabel('Hawkish (+) / Dovish (-)');
+    title('FOMC Meeting Minutes — Tone Score');
+    yline(0, 'k--');
+    grid on;
+end

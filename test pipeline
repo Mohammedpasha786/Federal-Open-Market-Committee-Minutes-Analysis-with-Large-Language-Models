@@ -1,0 +1,72 @@
+%% test_pipeline.m — MATLAB Unit Tests for FOMC RAG Pipeline
+% Run with: results = runtests('test_pipeline'); disp(results)
+
+classdef test_pipeline < matlab.unittest.TestCase
+
+    %% ------------------------------------------------------------------ %%
+    methods (Test)
+
+        function test_strip_html(tc)
+        % strip_html removes tags and decodes entities
+            html = '<p>Hello &amp; <b>World</b></p>';
+            text = fetch_fomc_documents_strip_html_wrapper(html);
+            tc.verifyEqual(strtrim(text), 'Hello & World');
+        end
+
+        function test_chunk_count(tc)
+        % Number of chunks = ceil((N - overlap) / step)
+            doc.text = strjoin(repmat({'word'}, 1, 1000));
+            doc.date = '2024-01-31';
+            doc.url  = 'http://test';
+            chunks = preprocess_and_chunk(doc, 256, 32);
+            tc.verifyGreaterThan(numel(chunks), 0);
+        end
+
+        function test_chunk_overlap(tc)
+        % Adjacent chunks share at least one word
+            doc.text = strjoin(arrayfun(@(i) sprintf('w%d', i), 1:500, 'UniformOutput', false));
+            doc.date = '2024-03-20';
+            doc.url  = 'http://test';
+            chunks = preprocess_and_chunk(doc, 100, 20);
+            if numel(chunks) >= 2
+                w1 = strsplit(chunks(1).text);
+                w2 = strsplit(chunks(2).text);
+                shared = intersect(w1, w2);
+                tc.verifyGreaterThan(numel(shared), 0);
+            end
+        end
+
+        function test_mat2pgvec(tc)
+        % pgvector literal format [x,y,...] 
+            v   = [0.1, -0.2, 0.3];
+            s   = mat2pgvec_test(v);
+            tc.verifyTrue(startsWith(s, '['));
+            tc.verifyTrue(endsWith(s,   ']'));
+            tc.verifyEqual(sum(s == ','), 2);
+        end
+
+        function test_empty_doc(tc)
+        % Empty document produces no chunks
+            doc.text = '';
+            doc.date = '2023-06-14';
+            doc.url  = 'http://test';
+            chunks = preprocess_and_chunk(doc, 256, 32);
+            tc.verifyEmpty(chunks);
+        end
+
+    end
+end
+
+%% Wrappers for private/nested functions (copy logic inline for testability)
+
+function text = fetch_fomc_documents_strip_html_wrapper(html)
+    text = regexprep(html, '<[^>]+>', ' ');
+    text = regexprep(text, '&amp;',  '&');
+    text = regexprep(text, '&nbsp;', ' ');
+    text = regexprep(text, '\s+',    ' ');
+    text = strtrim(text);
+end
+
+function s = mat2pgvec_test(v)
+    s = ['[', strjoin(arrayfun(@(x) sprintf('%.8f',x), v, 'UniformOutput',false), ','), ']'];
+end

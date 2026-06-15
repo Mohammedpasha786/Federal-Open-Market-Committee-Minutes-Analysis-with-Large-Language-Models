@@ -1,0 +1,165 @@
+name: FOMC RAG — CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── 1. Lint MATLAB files ────────────────────────────────────────────────────
+  matlab-lint:
+    name: MATLAB Static Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v2
+        with:
+          release: R2024a
+          products: >
+            Text_Analytics_Toolbox
+            Database_Toolbox
+            Statistics_and_Machine_Learning_Toolbox
+            Deep_Learning_Toolbox
+
+      - name: Run MATLAB Code Analyser (mlint)
+        uses: matlab-actions/run-command@v2
+        with:
+          command: |
+            files = dir(fullfile('src','*.m'));
+            issues = {};
+            for i = 1:numel(files)
+              p = fullfile('src', files(i).name);
+              info = checkcode(p, '-id');
+              if ~isempty(info)
+                issues{end+1} = sprintf('%s: %d issue(s)', files(i).name, numel(info));
+                for k = 1:numel(info)
+                  fprintf('  [%s] line %d: %s\n', info(k).id, info(k).line, info(k).message);
+                end
+              end
+            end
+            if ~isempty(issues)
+              warning('mlint found issues in %d file(s).', numel(issues));
+            else
+              disp('mlint: no issues found.');
+            end
+
+  # ── 2. Unit tests ───────────────────────────────────────────────────────────
+  unit-tests:
+    name: MATLAB Unit Tests
+    runs-on: ubuntu-latest
+    needs: matlab-lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v2
+        with:
+          release: R2024a
+          products: >
+            Text_Analytics_Toolbox
+            Database_Toolbox
+            Statistics_and_Machine_Learning_Toolbox
+            Deep_Learning_Toolbox
+
+      - name: Run Unit Tests
+        uses: matlab-actions/run-tests@v2
+        with:
+          source-folder: src
+          test-results-junit: test-results/results.xml
+          code-coverage-cobertura: coverage/coverage.xml
+          select-by-folder: tests
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/results.xml
+
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/coverage.xml
+
+  # ── 3. SQL schema validation ─────────────────────────────────────────────────
+  sql-validate:
+    name: SQL Schema Validation
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_USER: postgres
+          POSTGRES_DB: fomc_rag_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate init_db.sql
+        env:
+          PGPASSWORD: testpass
+        run: |
+          # Patch DB name from fomc_rag → fomc_rag_test for CI isolation
+          sed 's/CREATE DATABASE fomc_rag;//; s/\\c fomc_rag//' data/init_db.sql \
+            | psql -h localhost -U postgres -d fomc_rag_test
+          echo "Schema applied successfully."
+
+      - name: Verify pgvector extension
+        env:
+          PGPASSWORD: testpass
+        run: |
+          psql -h localhost -U postgres -d fomc_rag_test \
+            -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';"
+
+      - name: Verify table and index
+        env:
+          PGPASSWORD: testpass
+        run: |
+          psql -h localhost -U postgres -d fomc_rag_test \
+            -c "\d fomc_chunks" \
+            -c "\di fomc_vec_idx"
+
+  # ── 4. Documentation check ───────────────────────────────────────────────────
+  docs-check:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check README exists and is non-empty
+        run: |
+          [ -s README.md ] && echo "README.md OK" || (echo "README.md missing or empty" && exit 1)
+
+      - name: Check required sections in README
+        run: |
+          for section in "Architecture" "Installation" "Usage" "Modules" "Running Tests"; do
+            grep -q "$section" README.md \
+              && echo "Section '$section' found" \
+              || (echo "Missing section: $section" && exit 1)
+          done
+
+      - name: Verify all src/*.m files are documented in README
+        run: |
+          for f in src/*.m; do
+            base=$(basename "$f" .m)
+            grep -q "$base" README.md \
+              && echo "$base documented" \
+              || echo "WARNING: $base not mentioned in README"
+          done

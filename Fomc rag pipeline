@@ -1,0 +1,52 @@
+%% FOMC RAG Pipeline - Main Entry Point
+% Federal Open Market Committee Minutes Analysis using LLMs + RAG
+% Requires: Text Analytics Toolbox, Database Toolbox, Deep Learning Toolbox
+
+clc; clear; close all;
+
+%% Configuration
+config.llm_api_key    = getenv('OPENAI_API_KEY');
+config.db_host        = 'localhost';
+config.db_port        = 5432;
+config.db_name        = 'fomc_rag';
+config.db_user        = getenv('PGUSER');
+config.db_pass        = getenv('PGPASSWORD');
+config.embed_model    = 'all-MiniLM-L6-v2';
+config.llm_model      = 'gpt-4o';
+config.top_k          = 5;
+config.chunk_size     = 512;
+config.chunk_overlap  = 64;
+config.fomc_base_url  = 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm';
+
+fprintf('=== FOMC RAG Pipeline ===\n');
+
+%% Step 1: Fetch FOMC Documents
+fprintf('[1/5] Fetching FOMC minutes...\n');
+raw_docs = fetch_fomc_documents(config.fomc_base_url);
+fprintf('    Fetched %d documents.\n', numel(raw_docs));
+
+%% Step 2: Preprocess & Chunk
+fprintf('[2/5] Preprocessing text...\n');
+chunks = preprocess_and_chunk(raw_docs, config.chunk_size, config.chunk_overlap);
+fprintf('    Created %d chunks.\n', numel(chunks));
+
+%% Step 3: Embed
+fprintf('[3/5] Generating embeddings...\n');
+embeddings = embed_chunks(chunks, config.embed_model);
+fprintf('    Embeddings shape: %dx%d\n', size(embeddings));
+
+%% Step 4: Store in PostgreSQL
+fprintf('[4/5] Storing in vector database...\n');
+store_vectors(embeddings, chunks, config);
+fprintf('    Done.\n');
+
+%% Step 5: Interactive Q&A Loop
+fprintf('[5/5] Entering Q&A loop (type "exit" to quit).\n\n');
+while true
+    query = input('Query: ', 's');
+    if strcmpi(strtrim(query), 'exit'), break; end
+    answer = rag_query(query, config);
+    fprintf('\nAnswer:\n%s\n\n', answer);
+end
+
+fprintf('Pipeline complete.\n');

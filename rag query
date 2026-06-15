@@ -1,0 +1,59 @@
+function answer = rag_query(query, config)
+%RAG_QUERY  Embed query → retrieve top-K chunks → prompt LLM → return answer.
+%
+%   answer = rag_query(query, config)
+
+    %% 1. Embed the query
+    q_chunk.text = query;
+    q_chunk.date = '';
+    q_chunk.url  = '';
+    q_chunk.idx  = 0;
+    q_emb = embed_chunks(q_chunk, config.embed_model);
+    q_vec = mat2pgvec(q_emb(1,:));
+
+    %% 2. Retrieve top-K from pgvector
+    conn = postgresql( ...
+        config.db_host, config.db_port, ...
+        config.db_name, config.db_user, config.db_pass);
+
+    sql = sprintf([ ...
+        'SELECT content, doc_date, ' ...
+        '       1 - (embedding <=> ''%s'') AS similarity ' ...
+        'FROM fomc_chunks ' ...
+        'ORDER BY embedding <=> ''%s'' ' ...
+        'LIMIT %d;'], q_vec, q_vec, config.top_k);
+
+    results = fetch(conn, sql);
+    close(conn);
+
+    if isempty(results)
+        answer = 'No relevant context found in the database.';
+        return;
+    end
+
+    %% 3. Build context block
+    context_parts = cell(height(results), 1);
+    for i = 1:height(results)
+        context_parts{i} = sprintf('[%s | sim=%.3f]\n%s', ...
+            results.doc_date{i}, results.similarity(i), results.content{i});
+    end
+    context = strjoin(context_parts, '\n\n---\n\n');
+
+    %% 4. Prompt LLM
+    system_prompt = [ ...
+        'You are an expert monetary policy analyst specialising in Federal Reserve ' ...
+        'communications. Answer questions using ONLY the provided FOMC document excerpts. ' ...
+        'Cite the document date when referencing specific passages. ' ...
+        'If the context is insufficient, say so clearly.'];
+
+    user_prompt = sprintf( ...
+        'Context from FOMC minutes:\n\n%s\n\n---\n\nQuestion: %s', ...
+        context, query);
+
+    answer = call_llm(system_prompt, user_prompt, config);
+end
+
+% -------------------------------------------------------------------------
+function s = mat2pgvec(v)
+    s = ['[', strjoin(arrayfun(@(x) sprintf('%.8f',x), v, 'UniformOutput', false), ','), ']'];
+end

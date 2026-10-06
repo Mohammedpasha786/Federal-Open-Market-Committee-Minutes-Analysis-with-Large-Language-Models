@@ -1,0 +1,33 @@
+function emb = createEmbedder(cfg, corpus)
+%CREATEEMBEDDER Return struct (Name, Dim, Neural, Encode). Uses all-MiniLM via documentEmbedding, else TF-IDF.
+
+emb = [];
+if cfg.useNeuralEmbeddings
+    try
+        mdl = documentEmbedding(Model = cfg.embeddingModel);
+        probe = embed(mdl, "probe");
+        emb = struct("Name", cfg.embeddingModel, "Dim", size(probe, 2), "Neural", true, ...
+            "Encode", @(t) l2normalize(double(embed(mdl, string(t(:))))));
+    catch ME
+        warning("fomc:embedder", "Neural embedding unavailable (%s). Using TF-IDF fallback.", ME.message);
+    end
+end
+if isempty(emb)
+    emb = tfidfEmbedder(string(corpus));
+end
+end
+
+function emb = tfidfEmbedder(corpus)
+docs = removeStopWords(tokenizedDocument(lower(corpus)));
+bag = bagOfWords(docs);
+df = full(sum(bag.Counts > 0, 1));
+idf = log((bag.NumDocuments + 1) ./ (df + 1)) + 1;
+emb = struct("Name", "tfidf-fallback", "Dim", numel(idf), "Neural", false, ...
+    "Encode", @(t) tfidfEncode(bag, idf, t));
+end
+
+function X = tfidfEncode(bag, idf, texts)
+d = removeStopWords(tokenizedDocument(lower(string(texts(:)))));
+X = l2normalize(full(encode(bag, d)) .* idf);
+end
+

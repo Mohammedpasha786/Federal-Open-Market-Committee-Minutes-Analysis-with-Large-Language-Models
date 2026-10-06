@@ -1,0 +1,36 @@
+function plotResults(cfg, metrics, hits)
+%PLOTRESULTS Plot per-question validation scores and the similarity scores for question 1; save to results/.
+
+vis = "off";
+if cfg.showFigures
+    vis = "on";
+end
+fig = figure("Visible", vis, "Position", [100 100 1100 420]);
+tl = tiledlayout(fig, 1, 2, "TileSpacing", "compact");
+
+ax1 = nexttile(tl);
+bar(ax1, [metrics.PerQuestion.KeywordRecall, double(metrics.PerQuestion.Hit)]);
+xlabel(ax1, "Question");
+ylabel(ax1, "Score");
+ylim(ax1, [0 1.1]);
+legend(ax1, {"Keyword recall", "Meeting hit"}, "Location", "southoutside");
+title(ax1, "Retrieval validation");
+
+ax2 = nexttile(tl);
+labels = hits.Meeting + " #" + hits.ChunkId;
+barh(ax2, flipud(hits.Score));
+yticks(ax2, 1:height(hits));
+yticklabels(ax2, flipud(labels));
+ax2.TickLabelInterpreter = "none";
+xlabel(ax2, "Cosine similarity");
+title(ax2, "Top passages for question 1");
+
+if ~isfolder(cfg.resultsDir)
+    mkdir(cfg.resultsDir);
+end
+exportgraphics(fig, fullfile(cfg.resultsDir, "validation.png"), "Resolution", 150);
+if ~cfg.showFigures
+    close(fig);
+end
+end
+

@@ -1,0 +1,8 @@
+function closeStore(store)
+%CLOSESTORE Close the PostgreSQL connection if the store uses one.
+
+if store.Backend == "postgres" && ~isempty(store.Conn) && isopen(store.Conn)
+    close(store.Conn);
+end
+end
+

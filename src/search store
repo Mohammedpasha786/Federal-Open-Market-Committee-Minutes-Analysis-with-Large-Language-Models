@@ -1,0 +1,15 @@
+function hits = searchStore(store, emb, question, k)
+%SEARCHSTORE Embed the question and return the top-k passages (Meeting, ChunkId, Text, Score).
+
+q = emb.Encode(string(question));
+if store.Backend == "postgres"
+    hits = pgSearch(store.Conn, q, k);
+    return
+end
+scores = store.Vectors * q';
+[s, idx] = sort(scores, "descend");
+m = min(k, numel(idx));
+hits = store.Chunks(idx(1:m), :);
+hits.Score = s(1:m);
+end
+

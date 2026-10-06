@@ -1,0 +1,8 @@
+function X = l2normalize(X)
+%L2NORMALIZE Scale each row to unit Euclidean length.
+
+n = vecnorm(X, 2, 2);
+n(n == 0) = 1;
+X = X ./ n;
+end
+

@@ -1,0 +1,11 @@
+function hits = pgSearch(conn, q, k)
+%PGSEARCH Return the k passages closest to query vector q by cosine distance using pgvector.
+
+lit = "'[" + join(compose("%.6g", q), ",") + "]'::vector";
+sql = "SELECT meeting, chunk_id, content, 1 - (embedding <=> " + lit + ") AS score " + ...
+    "FROM fomc_chunks ORDER BY embedding <=> " + lit + " LIMIT " + k;
+t = fetch(conn, sql);
+hits = table(string(t.meeting), double(t.chunk_id), string(t.content), double(t.score), ...
+    "VariableNames", {'Meeting', 'ChunkId', 'Text', 'Score'});
+end
+

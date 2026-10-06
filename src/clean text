@@ -1,0 +1,11 @@
+function txt = cleanText(txt)
+%CLEANTEXT Normalize whitespace and line breaks while keeping paragraph structure.
+
+txt = string(txt);
+txt = replace(txt, char(160), " ");
+txt = regexprep(txt, "\r\n?", "\n");
+txt = regexprep(txt, "[ \t]+", " ");
+txt = regexprep(txt, "\n{3,}", "\n\n");
+txt = strip(txt);
+end
+

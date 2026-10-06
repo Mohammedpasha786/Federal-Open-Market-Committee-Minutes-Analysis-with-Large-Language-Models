@@ -1,0 +1,26 @@
+function V = embedChunks(cfg, emb, texts)
+%EMBEDCHUNKS Embed passages; neural embeddings are cached in models/embeddings_cache.mat.
+
+texts = string(texts(:));
+cacheFile = fullfile(cfg.modelsDir, "embeddings_cache.mat");
+key = "";
+if emb.Neural
+    w = double(char(join(texts, "")));
+    key = emb.Name + "|" + numel(texts) + "|" + sum(w .* mod(1:numel(w), 97));
+    if isfile(cacheFile)
+        s = load(cacheFile);
+        if isfield(s, "key") && string(s.key) == key
+            V = s.V;
+            return
+        end
+    end
+end
+V = emb.Encode(texts);
+if emb.Neural
+    if ~isfolder(cfg.modelsDir)
+        mkdir(cfg.modelsDir);
+    end
+    save(cacheFile, "key", "V");
+end
+end
+

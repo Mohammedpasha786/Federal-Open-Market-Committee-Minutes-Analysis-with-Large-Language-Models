@@ -1,0 +1,10 @@
+projectRoot = fileparts(mfilename("fullpath"));
+addpath(fullfile(projectRoot, "src"));
+
+cfg = fomcConfig();
+
+results = runFOMCPipeline(cfg);
+
+disp(results.Metrics.Summary)
+fprintf("Report: %s\n", fullfile(cfg.resultsDir, "report.md"));
+

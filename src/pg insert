@@ -1,0 +1,16 @@
+function pgInsert(conn, chunks, vectors)
+%PGINSERT Insert passages and their embeddings into fomc_chunks in batches of 50 rows.
+
+n = height(chunks);
+for s = 1:50:n
+    e = min(s + 49, n);
+    rows = strings(e - s + 1, 1);
+    for i = s:e
+        txt = replace(chunks.Text(i), "'", "''");
+        vec = join(compose("%.6g", vectors(i, :)), ",");
+        rows(i - s + 1) = sprintf("('%s',%d,'%s','[%s]')", chunks.Meeting(i), chunks.ChunkId(i), txt, vec);
+    end
+    execute(conn, "INSERT INTO fomc_chunks (meeting, chunk_id, content, embedding) VALUES " + join(rows, ","));
+end
+end
+

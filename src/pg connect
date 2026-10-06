@@ -1,0 +1,11 @@
+function conn = pgConnect(cfg)
+%PGCONNECT Open a PostgreSQL native interface connection using cfg.pg and the password in an env variable.
+
+pw = string(getenv(cfg.pg.PasswordEnv));
+conn = postgresql(cfg.pg.User, pw, "Server", cfg.pg.Server, ...
+    "PortNumber", cfg.pg.Port, "DatabaseName", cfg.pg.Database);
+if ~isopen(conn)
+    error("fomc:pg", "Could not open PostgreSQL connection to %s:%d.", cfg.pg.Server, cfg.pg.Port);
+end
+end
+

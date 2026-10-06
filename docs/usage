@@ -1,0 +1,51 @@
+Usage Guide
+Configuration
+All settings live in `src/fomcConfig.m`.
+Field	Default	Purpose
+`useSampleData`	`true`	`false` downloads real minutes from federalreserve.gov
+`startYear`, `endYear`	2023, 2025	Year range for downloads
+`useNeuralEmbeddings`	`true`	`false` forces the TF-IDF fallback
+`embeddingModel`	`all-MiniLM-L12-v2`	Or `all-MiniLM-L6-v2`
+`usePostgres`	`false`	`true` stores vectors in PostgreSQL with pgvector
+`topK`	5	Passages retrieved per question
+`llm.Provider`	`auto`	`auto`, `openai`, `ollama`, or `extractive`
+`customQuestion`	`""`	Extra question answered after the validation set
+`showFigures`	`true`	`false` for headless runs
+Run with real minutes
+```matlab
+cfg = fomcConfig();
+cfg.useSampleData = false;
+cfg.customQuestion = "Why did the Committee change the policy rate?";
+runFOMCPipeline(cfg);
+```
+Downloaded pages are cached in `data/downloads/`. If nothing can be downloaded, the pipeline falls back to the sample data.
+The questions in `data/sample/questions.csv` are written for the sample data. For real minutes, supply your own
+`questions.csv` (columns `Question`, `ExpectedMeeting`, `ExpectedKeywords` separated by `;`) and set `cfg.questionsFile`.
+`ExpectedMeeting` for downloaded minutes looks like `fomc_20250129`.
+PostgreSQL with pgvector
+```bash
+docker run --name fomc-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d pgvector/pgvector:pg16
+```
+```matlab
+setenv("FOMC_PG_PASSWORD", "postgres");
+cfg = fomcConfig();
+cfg.usePostgres = true;
+runFOMCPipeline(cfg);
+```
+`sql/schema.sql` shows the schema the pipeline creates (vector dimension 384 for all-MiniLM).
+LLM answers
+```matlab
+setenv("OPENAI_API_KEY", "sk-...");
+```
+or run a local model with Ollama and set `cfg.llm.Provider = "ollama"`. Install "Large Language Models (LLMs) with MATLAB"
+from the Add-On Explorer, or clone https://github.com/matlab-deep-learning/llms-with-matlab and add it to the path.
+Without an LLM, answers are the top retrieved passages.
+Validation metrics
+HitRateAtK: fraction of questions whose expected meeting appears in the top-k passages.
+MRR: mean reciprocal rank of the first passage from the expected meeting.
+MeanKeywordRecall: share of expected keywords found in the retrieved passages.
+MeanAnswerCoverage: share of expected keywords found in the generated answer.
+Tests
+```matlab
+runtests("tests")
+```

@@ -1,0 +1,36 @@
+function answer = askLLM(cfg, question, hits)
+%ASKLLM Generate an answer with OpenAI or Ollama via LLMs with MATLAB; falls back to extractive evidence.
+
+[sys, usr] = buildPrompt(question, hits);
+provider = string(cfg.llm.Provider);
+if provider == "auto"
+    if strlength(string(getenv("OPENAI_API_KEY"))) > 0 && exist("openAIChat", "file") ~= 0
+        provider = "openai";
+    else
+        provider = "extractive";
+    end
+end
+
+try
+    switch provider
+        case "openai"
+            chat = openAIChat(sys, "ModelName", cfg.llm.OpenAIModel);
+            answer = string(generate(chat, usr));
+        case "ollama"
+            chat = ollamaChat(cfg.llm.OllamaModel, sys);
+            answer = string(generate(chat, usr));
+        otherwise
+            answer = extractiveAnswer(hits);
+    end
+catch ME
+    warning("fomc:llm", "LLM call failed (%s). Returning extractive answer.", ME.message);
+    answer = extractiveAnswer(hits);
+end
+end
+
+function answer = extractiveAnswer(hits)
+m = min(3, height(hits));
+answer = "Retrieved evidence (no LLM configured): " + ...
+    join("[" + hits.Meeting(1:m) + "] " + hits.Text(1:m), " ");
+end
+

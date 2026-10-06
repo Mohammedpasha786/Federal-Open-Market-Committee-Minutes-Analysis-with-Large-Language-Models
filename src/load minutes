@@ -1,0 +1,28 @@
+function docs = loadMinutes(cfg)
+%LOADMINUTES Return a table (Meeting, Text) from bundled samples or the Federal Reserve website.
+
+if cfg.useSampleData
+    docs = loadSample(cfg);
+else
+    docs = downloadMinutes(cfg);
+    if isempty(docs)
+        warning("fomc:download", "No minutes downloaded. Falling back to bundled sample data.");
+        docs = loadSample(cfg);
+    end
+end
+docs.Text = cleanText(docs.Text);
+end
+
+function docs = loadSample(cfg)
+files = dir(fullfile(cfg.dataDir, "*.txt"));
+assert(~isempty(files), "fomc:noData", "No sample files found in %s.", cfg.dataDir);
+n = numel(files);
+meeting = strings(n, 1);
+text = strings(n, 1);
+for i = 1:n
+    meeting(i) = erase(string(files(i).name), ".txt");
+    text(i) = string(fileread(fullfile(files(i).folder, files(i).name)));
+end
+docs = table(meeting, text, "VariableNames", {'Meeting', 'Text'});
+end
+

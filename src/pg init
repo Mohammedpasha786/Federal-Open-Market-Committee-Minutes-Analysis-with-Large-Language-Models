@@ -1,0 +1,11 @@
+function pgInit(conn, dim)
+%PGINIT Enable pgvector, create the passage table with a cosine HNSW index, and clear old rows.
+
+execute(conn, "CREATE EXTENSION IF NOT EXISTS vector");
+execute(conn, "CREATE TABLE IF NOT EXISTS fomc_chunks (id SERIAL PRIMARY KEY, meeting TEXT, " + ...
+    "chunk_id INTEGER, content TEXT, embedding vector(" + dim + "))");
+execute(conn, "TRUNCATE fomc_chunks");
+execute(conn, "CREATE INDEX IF NOT EXISTS fomc_chunks_embedding_idx ON fomc_chunks " + ...
+    "USING hnsw (embedding vector_cosine_ops)");
+end
+

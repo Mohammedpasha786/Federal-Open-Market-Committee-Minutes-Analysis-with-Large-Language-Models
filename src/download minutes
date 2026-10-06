@@ -1,0 +1,48 @@
+function docs = downloadMinutes(cfg)
+%DOWNLOADMINUTES Download FOMC minutes (HTML) for cfg.startYear..cfg.endYear and extract plain text.
+
+base = "https://www.federalreserve.gov/monetarypolicy/";
+if ~isfolder(cfg.downloadDir)
+    mkdir(cfg.downloadDir);
+end
+
+pages = base + "fomccalendars.htm";
+for y = cfg.startYear:cfg.endYear
+    pages(end+1) = base + "fomchistorical" + y + ".htm"; %#ok<AGROW>
+end
+
+dates = strings(0, 1);
+for p = pages
+    try
+        html = string(webread(p));
+    catch
+        continue
+    end
+    tok = regexp(html, "fomcminutes(\d{8})\.htm", "tokens");
+    for t = 1:numel(tok)
+        dates(end+1, 1) = string(tok{t}{1}); %#ok<AGROW>
+    end
+end
+dates = unique(dates);
+years = double(extractBefore(dates, 5));
+dates = dates(years >= cfg.startYear & years <= cfg.endYear);
+
+meeting = strings(0, 1);
+text = strings(0, 1);
+for d = dates'
+    file = fullfile(cfg.downloadDir, "fomcminutes" + d + ".htm");
+    try
+        if ~isfile(file)
+            websave(file, base + "fomcminutes" + d + ".htm");
+        end
+        txt = string(extractFileText(file));
+    catch ME
+        warning("fomc:download", "Skipping %s: %s", d, ME.message);
+        continue
+    end
+    meeting(end+1, 1) = "fomc_" + d; %#ok<AGROW>
+    text(end+1, 1) = txt; %#ok<AGROW>
+end
+docs = table(meeting, text, "VariableNames", {'Meeting', 'Text'});
+end
+

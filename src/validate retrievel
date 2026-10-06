@@ -1,0 +1,28 @@
+function metrics = validateRetrieval(questions, retrieved, answers)
+%VALIDATERETRIEVAL Score retrieval (hit rate, MRR, keyword recall) and answer keyword coverage.
+
+n = height(questions);
+hit = false(n, 1);
+rr = zeros(n, 1);
+kwRecall = zeros(n, 1);
+ansCoverage = zeros(n, 1);
+for i = 1:n
+    h = retrieved{i};
+    pos = find(h.Meeting == questions.ExpectedMeeting(i), 1);
+    hit(i) = ~isempty(pos);
+    if hit(i)
+        rr(i) = 1 / pos;
+    end
+    kws = lower(strip(split(questions.ExpectedKeywords(i), ";")));
+    ctx = lower(join(h.Text, " "));
+    ans = lower(answers(i));
+    kwRecall(i) = mean(arrayfun(@(p) contains(ctx, p), kws));
+    ansCoverage(i) = mean(arrayfun(@(p) contains(ans, p), kws));
+end
+perQuestion = table((1:n)', questions.Question, hit, rr, kwRecall, ansCoverage, ...
+    "VariableNames", {'Q', 'Question', 'Hit', 'ReciprocalRank', 'KeywordRecall', 'AnswerCoverage'});
+summary = table(mean(hit), mean(rr), mean(kwRecall), mean(ansCoverage), ...
+    "VariableNames", {'HitRateAtK', 'MRR', 'MeanKeywordRecall', 'MeanAnswerCoverage'});
+metrics = struct("PerQuestion", perQuestion, "Summary", summary);
+end
+

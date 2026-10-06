@@ -1,0 +1,11 @@
+function [systemPrompt, userPrompt] = buildPrompt(question, hits)
+%BUILDPROMPT Combine retrieved passages and the question into a grounded LLM prompt.
+
+systemPrompt = "You are an analyst of Federal Open Market Committee minutes. " + ...
+    "Answer only from the provided excerpts and cite the meeting label in brackets after each claim. " + ...
+    "If the excerpts do not contain the answer, say so.";
+ctx = "[" + hits.Meeting + "] " + hits.Text;
+userPrompt = "Excerpts:" + newline + join(ctx, newline + newline) + newline + newline + ...
+    "Question: " + string(question);
+end
+

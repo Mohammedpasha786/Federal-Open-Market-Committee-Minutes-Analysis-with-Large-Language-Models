@@ -1,0 +1,24 @@
+function store = buildVectorStore(cfg, chunks, emb)
+%BUILDVECTORSTORE Store passage vectors in PostgreSQL/pgvector when enabled, otherwise in memory.
+
+vectors = embedChunks(cfg, emb, chunks.Text);
+store = struct("Backend", "local", "Chunks", chunks, "Vectors", vectors, "Conn", []);
+
+if ~cfg.usePostgres
+    return
+end
+if ~emb.Neural
+    warning("fomc:pg", "PostgreSQL store requires neural embeddings. Using in-memory store.");
+    return
+end
+try
+    conn = pgConnect(cfg);
+    pgInit(conn, size(vectors, 2));
+    pgInsert(conn, chunks, vectors);
+    store.Backend = "postgres";
+    store.Conn = conn;
+catch ME
+    warning("fomc:pg", "PostgreSQL unavailable (%s). Using in-memory store.", ME.message);
+end
+end
+

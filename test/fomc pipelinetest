@@ -1,0 +1,84 @@
+classdef FOMCPipelineTest < matlab.unittest.TestCase
+
+    properties
+        Cfg
+    end
+
+    methods (TestClassSetup)
+        function setupPath(tc)
+            root = fileparts(fileparts(mfilename("fullpath")));
+            addpath(fullfile(root, "src"));
+            tc.addTeardown(@rmpath, fullfile(root, "src"));
+        end
+    end
+
+    methods (TestMethodSetup)
+        function makeConfig(tc)
+            cfg = fomcConfig();
+            cfg.useNeuralEmbeddings = false;
+            cfg.showFigures = false;
+            cfg.llm.Provider = "extractive";
+            cfg.resultsDir = tempname;
+            tc.Cfg = cfg;
+        end
+    end
+
+    methods (Test)
+        function sampleDataIsPresent(tc)
+            tc.verifyTrue(isfile(tc.Cfg.questionsFile));
+            tc.verifyEqual(numel(dir(fullfile(tc.Cfg.dataDir, "*.txt"))), 4);
+        end
+
+        function chunkingDropsShortLines(tc)
+            docs = table("m1", "Short title" + newline + newline + ...
+                strjoin(repmat("word", 1, 20), " "), "VariableNames", {'Meeting', 'Text'});
+            chunks = chunkMinutes(docs, tc.Cfg);
+            tc.verifyEqual(height(chunks), 1);
+        end
+
+        function chunkingSplitsLongParagraphs(tc)
+            sentence = strjoin(repmat("word", 1, 30), " ") + ". ";
+            docs = table("m1", strjoin(repmat(sentence, 1, 10), ""), "VariableNames", {'Meeting', 'Text'});
+            chunks = chunkMinutes(docs, tc.Cfg);
+            tc.verifyGreaterThan(height(chunks), 1);
+        end
+
+        function retrievalRanksRelevantPassageFirst(tc)
+            docs = loadMinutes(tc.Cfg);
+            chunks = chunkMinutes(docs, tc.Cfg);
+            emb = createEmbedder(tc.Cfg, chunks.Text);
+            store = buildVectorStore(tc.Cfg, chunks, emb);
+            hits = searchStore(store, emb, "balance sheet runoff and repo market pressure", 3);
+            tc.verifyEqual(hits.Meeting(1), "sample_meeting_2");
+            tc.verifyTrue(issorted(hits.Score, "descend"));
+        end
+
+        function promptContainsContextAndQuestion(tc)
+            hits = table("m1", 1, "Excerpt text", 0.9, "VariableNames", {'Meeting', 'ChunkId', 'Text', 'Score'});
+            [sys, usr] = buildPrompt("What happened?", hits);
+            tc.verifyTrue(contains(usr, "[m1] Excerpt text"));
+            tc.verifyTrue(contains(usr, "What happened?"));
+            tc.verifyGreaterThan(strlength(sys), 0);
+        end
+
+        function validationMetricsAreComputed(tc)
+            questions = table("q", "m1", "alpha;beta", "VariableNames", {'Question', 'ExpectedMeeting', 'ExpectedKeywords'});
+            hits = table(["m2"; "m1"], [1; 1], ["alpha text"; "beta text"], [0.9; 0.8], ...
+                "VariableNames", {'Meeting', 'ChunkId', 'Text', 'Score'});
+            m = validateRetrieval(questions, {hits}, "alpha only");
+            tc.verifyEqual(m.Summary.HitRateAtK, 1);
+            tc.verifyEqual(m.Summary.MRR, 0.5);
+            tc.verifyEqual(m.Summary.MeanKeywordRecall, 1);
+            tc.verifyEqual(m.Summary.MeanAnswerCoverage, 0.5);
+        end
+
+        function endToEndRunsOffline(tc)
+            results = runFOMCPipeline(tc.Cfg);
+            tc.verifyGreaterThanOrEqual(results.Metrics.Summary.HitRateAtK, 0.8);
+            tc.verifyTrue(isfile(fullfile(tc.Cfg.resultsDir, "report.md")));
+            tc.verifyTrue(isfile(fullfile(tc.Cfg.resultsDir, "validation.png")));
+            tc.verifyEqual(results.Backend, "local");
+        end
+    end
+end
+

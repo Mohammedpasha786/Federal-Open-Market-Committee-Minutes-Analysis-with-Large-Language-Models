@@ -1,0 +1,54 @@
+function chunks = chunkMinutes(docs, cfg)
+%CHUNKMINUTES Split each meeting into paragraph-level passages; drop short lines and cap long ones.
+
+meeting = strings(0, 1);
+chunkId = zeros(0, 1);
+text = strings(0, 1);
+
+for i = 1:height(docs)
+    lines = strip(splitlines(docs.Text(i)));
+    lines = lines(strlength(lines) > 0);
+    id = 0;
+    for j = 1:numel(lines)
+        for piece = splitLong(lines(j), cfg.maxWords)'
+            if numel(split(piece)) >= cfg.minWords
+                id = id + 1;
+                meeting(end+1, 1) = docs.Meeting(i); %#ok<AGROW>
+                chunkId(end+1, 1) = id; %#ok<AGROW>
+                text(end+1, 1) = piece; %#ok<AGROW>
+            end
+        end
+    end
+end
+chunks = table(meeting, chunkId, text, "VariableNames", {'Meeting', 'ChunkId', 'Text'});
+end
+
+function pieces = splitLong(txt, maxWords)
+if numel(split(txt)) <= maxWords
+    pieces = txt;
+    return
+end
+sentences = strip(string(regexp(txt, "(?<=[.!?])\s+", "split")));
+sentences = sentences(:);
+pieces = strings(0, 1);
+cur = "";
+curWords = 0;
+for s = sentences'
+    if strlength(s) == 0
+        continue
+    end
+    w = numel(split(s));
+    if curWords + w > maxWords && curWords > 0
+        pieces(end+1, 1) = strip(cur); %#ok<AGROW>
+        cur = s;
+        curWords = w;
+    else
+        cur = strip(cur + " " + s);
+        curWords = curWords + w;
+    end
+end
+if strlength(cur) > 0
+    pieces(end+1, 1) = strip(cur);
+end
+end
+

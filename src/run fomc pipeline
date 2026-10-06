@@ -1,0 +1,80 @@
+function results = runFOMCPipeline(cfg)
+%RUNFOMCPIPELINE End-to-end RAG workflow: load, chunk, embed, store, retrieve, answer, validate.
+
+if nargin < 1
+    cfg = fomcConfig();
+end
+addpath(fullfile(cfg.root, "src"));
+if ~isfolder(cfg.resultsDir)
+    mkdir(cfg.resultsDir);
+end
+
+fprintf("[1/6] Loading FOMC minutes\n");
+docs = loadMinutes(cfg);
+fprintf("      %d meetings\n", height(docs));
+
+fprintf("[2/6] Splitting into passages\n");
+chunks = chunkMinutes(docs, cfg);
+fprintf("      %d passages\n", height(chunks));
+
+fprintf("[3/6] Creating embedder\n");
+emb = createEmbedder(cfg, chunks.Text);
+fprintf("      %s (%d dims)\n", emb.Name, emb.Dim);
+
+fprintf("[4/6] Building vector store\n");
+store = buildVectorStore(cfg, chunks, emb);
+cleanup = onCleanup(@() closeStore(store));
+fprintf("      backend: %s\n", store.Backend);
+
+fprintf("[5/6] Retrieving and answering\n");
+questions = readtable(cfg.questionsFile, "TextType", "string", "Delimiter", ",");
+n = height(questions);
+answers = strings(n, 1);
+retrieved = cell(n, 1);
+for i = 1:n
+    retrieved{i} = searchStore(store, emb, questions.Question(i), cfg.topK);
+    answers(i) = askLLM(cfg, questions.Question(i), retrieved{i});
+end
+
+fprintf("[6/6] Validating and reporting\n");
+metrics = validateRetrieval(questions, retrieved, answers);
+plotResults(cfg, metrics, retrieved{1});
+writetable(metrics.PerQuestion, fullfile(cfg.resultsDir, "validation_metrics.csv"));
+
+custom = struct("Question", "", "Hits", [], "Answer", "");
+if strlength(cfg.customQuestion) > 0
+    custom.Question = string(cfg.customQuestion);
+    custom.Hits = searchStore(store, emb, custom.Question, cfg.topK);
+    custom.Answer = askLLM(cfg, custom.Question, custom.Hits);
+    fprintf("\nQ: %s\nA: %s\n", custom.Question, custom.Answer);
+end
+
+writeReport(cfg, questions, retrieved, answers, metrics, store.Backend, emb.Name, custom);
+
+results = struct("Docs", docs, "Chunks", chunks, "Questions", questions, ...
+    "Retrieved", {retrieved}, "Answers", answers, "Metrics", metrics, ...
+    "Backend", store.Backend, "Embedder", emb.Name);
+end
+
+function writeReport(cfg, questions, retrieved, answers, metrics, backend, embName, custom)
+lines = ["# FOMC RAG Report"; ""; ...
+    "- Embedding model: " + embName; ...
+    "- Vector backend: " + backend; ...
+    "- Top-k: " + cfg.topK; ""; ...
+    "| Metric | Value |"; "|---|---|"; ...
+    "| Hit rate @k | " + sprintf("%.2f", metrics.Summary.HitRateAtK) + " |"; ...
+    "| MRR | " + sprintf("%.2f", metrics.Summary.MRR) + " |"; ...
+    "| Mean keyword recall | " + sprintf("%.2f", metrics.Summary.MeanKeywordRecall) + " |"; ...
+    "| Mean answer coverage | " + sprintf("%.2f", metrics.Summary.MeanAnswerCoverage) + " |"; ""];
+for i = 1:height(questions)
+    h = retrieved{i};
+    lines = [lines; "## Q" + i + ". " + questions.Question(i); ""; ...
+        "Top source: " + h.Meeting(1) + " (score " + sprintf("%.3f", h.Score(1)) + ")"; ""; ...
+        answers(i); ""]; %#ok<AGROW>
+end
+if strlength(custom.Question) > 0
+    lines = [lines; "## Custom question. " + custom.Question; ""; custom.Answer; ""];
+end
+writelines(lines, fullfile(cfg.resultsDir, "report.md"));
+end
+

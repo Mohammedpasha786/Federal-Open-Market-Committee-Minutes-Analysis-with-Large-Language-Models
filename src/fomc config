@@ -1,0 +1,33 @@
+function cfg = fomcConfig()
+%FOMCCONFIG Central configuration for the FOMC RAG pipeline. Edit values here, not in main.m.
+
+root = fileparts(fileparts(mfilename("fullpath")));
+
+cfg.root = root;
+cfg.dataDir = fullfile(root, "data", "sample");
+cfg.downloadDir = fullfile(root, "data", "downloads");
+cfg.modelsDir = fullfile(root, "models");
+cfg.resultsDir = fullfile(root, "results");
+cfg.questionsFile = fullfile(cfg.dataDir, "questions.csv");
+
+cfg.useSampleData = true;
+cfg.startYear = 2023;
+cfg.endYear = 2025;
+
+cfg.useNeuralEmbeddings = true;
+cfg.embeddingModel = "all-MiniLM-L12-v2";
+
+cfg.usePostgres = false;
+cfg.pg = struct("Server", "localhost", "Port", 5432, "Database", "postgres", ...
+    "User", "postgres", "PasswordEnv", "FOMC_PG_PASSWORD");
+
+cfg.topK = 5;
+cfg.minWords = 15;
+cfg.maxWords = 180;
+
+cfg.llm = struct("Provider", "auto", "OpenAIModel", "gpt-4o-mini", "OllamaModel", "mistral");
+
+cfg.customQuestion = "";
+cfg.showFigures = true;
+end
+
